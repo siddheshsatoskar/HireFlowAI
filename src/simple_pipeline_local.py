@@ -273,13 +273,16 @@ def interactive_chatbot(index: VectorStoreIndex, job_description: str = None):
     print("=" * 60)
     print()
     print("Welcome to the HireFlow Chatbot! 🤖")
-    print("Ask me anything about the candidates in the database.")
+    print("I'm your AI assistant for candidate search and evaluation.")
     print()
-    print("Example questions:")
-    print("  - What are the key skills of the top candidates?")
-    print("  - Which candidate has the most experience in Python?")
-    print("  - Compare the educational backgrounds of the candidates")
-    print("  - Who would be best for a senior software engineer role?")
+    print("💡 I maintain conversation context, so you can ask follow-up questions!")
+    print()
+    print("Example conversation:")
+    print("  You: Who has the most accounting experience?")
+    print("  Bot: [Gives answer about Candidate A]")
+    print("  You: What about their certifications?  ← I remember who 'their' refers to!")
+    print("  Bot: [Details about Candidate A's certifications]")
+    print("  You: Compare them with the second candidate  ← Conversational!")
     print()
     print("Type 'exit', 'quit', or 'bye' to end the conversation.")
     print("=" * 60)
@@ -291,20 +294,37 @@ def interactive_chatbot(index: VectorStoreIndex, job_description: str = None):
         api_key=GEMINI_API_KEY
     )
 
-    memory = ChatMemoryBuffer(token_limit=1500)
+    # Create chat memory buffer
+    memory = ChatMemoryBuffer.from_defaults(token_limit=3000)
     
-    # Create query engine with Gemini LLM
-    query_engine = index.as_query_engine(
+    # Create chat engine with Gemini LLM (instead of query engine)
+    chat_engine = index.as_chat_engine(
         llm=llm,
         memory=memory,
         similarity_top_k=5,
-        response_mode="tree_summarize"
+        chat_mode="context",  # Uses retrieved context for responses
+        system_prompt="""You are a helpful HR assistant for HireFlow, an intelligent candidate search system.
+You have access to a database of candidate resumes. Your role is to:
+- Answer questions about candidates' skills, experience, and qualifications
+- Compare candidates based on specific criteria
+- Provide recommendations for job roles
+- Remember the conversation context and refer back to previous answers
+
+Be concise, professional, and cite specific details from the resumes when possible."""
     )
     
-    # Add context about the job description if provided
-    context_prefix = ""
+    # Add job description context if provided
     if job_description:
-        context_prefix = f"Context - Job Description: {job_description}\n\n"
+        print("📋 Setting up context with job description...")
+        initial_message = f"""I'm looking to fill a position with the following requirements:
+
+{job_description}
+
+Please keep this job description in mind when I ask about candidates."""
+        
+        # Send initial context message (won't be displayed)
+        chat_engine.chat(initial_message)
+        print("✅ Context set! You can now ask questions.\n")
     
     # Interactive chat loop
     while True:
@@ -323,13 +343,11 @@ def interactive_chatbot(index: VectorStoreIndex, job_description: str = None):
             if not user_question:
                 continue
             
-            # Process the question
-            full_query = context_prefix + user_question
             print()
             print("Chatbot: ", end="", flush=True)
             
-            # Query the index
-            response = query_engine.query(full_query)
+            # Chat with the engine (maintains conversation history)
+            response = chat_engine.chat(user_question)
             print(response)
             print()
             
