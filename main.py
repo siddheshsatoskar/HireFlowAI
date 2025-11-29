@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """
 HireFlow CLI - Command Line Interface for Intelligent Candidate Search
+
+Features:
+- Interactive job description input
+- Semantic search using vector embeddings
+- Candidate ranking and evaluation
+- Conversational AI chatbot using as_chat_engine()
+  * Maintains conversation memory (up to 3000 tokens)
+  * Understands follow-up questions and pronouns
+  * Natural multi-turn dialogues
 """
 
 import argparse
@@ -100,7 +109,18 @@ def get_job_description_from_user():
 
 
 def run_full_pipeline(args):
-    """Run the complete HireFlow pipeline"""
+    """
+    Run the complete HireFlow pipeline.
+    
+    Includes:
+    1. Environment setup with embeddings
+    2. Resume ingestion
+    3. Vector store creation
+    4. Candidate retrieval and ranking
+    5. Summary report generation
+    6. Optional AI evaluation
+    7. Interactive chatbot (uses as_chat_engine with conversation memory)
+    """
     print_banner()
     
     try:
@@ -151,7 +171,8 @@ def run_full_pipeline(args):
         if args.detailed_evaluation:
             generate_candidate_evaluation(index, job_description)
         
-        # Step 9: Interactive chatbot
+        # Step 9: Interactive chatbot (uses as_chat_engine with conversation memory)
+        # Maintains context across questions, understands follow-ups and pronouns
         if args.interactive:
             interactive_chatbot(index, job_description)
         
@@ -169,7 +190,12 @@ def run_full_pipeline(args):
 
 
 def run_chatbot_only(args):
-    """Run only the chatbot with existing or new index"""
+    """
+    Run only the chatbot with existing or new index.
+    
+    Uses as_chat_engine() for conversational AI with memory.
+    Maintains conversation history and understands follow-up questions.
+    """
     print_banner()
     
     try:
@@ -200,7 +226,8 @@ def run_chatbot_only(args):
         elif args.ask_job_description:
             job_description = get_job_description_from_user()
         
-        # Start chatbot
+        # Start chatbot (uses as_chat_engine for conversational AI)
+        # Remembers conversation history and handles follow-up questions naturally
         interactive_chatbot(index, job_description)
         
     except Exception as e:
@@ -271,6 +298,7 @@ def main():
         epilog="""
 Examples:
   # Run full pipeline - will prompt for job description
+  # Includes conversational chatbot with memory at the end
   python3 main.py
 
   # Run with custom job description (inline)
@@ -279,7 +307,7 @@ Examples:
   # Run with job description from file
   python3 main.py --job-file job_desc.txt
 
-  # Run only chatbot with interactive job description
+  # Run only conversational chatbot (remembers context, handles follow-ups)
   python3 main.py --mode chatbot --ask-job-description
 
   # Run search only - will prompt for job description if not provided
@@ -298,7 +326,7 @@ Examples:
         '--mode',
         choices=['full', 'chatbot', 'search'],
         default='full',
-        help='Execution mode: full pipeline, chatbot only, or search only (default: full)'
+        help='Execution mode: full pipeline, chatbot only (conversational with memory), or search only (default: full)'
     )
     
     # Input options
@@ -347,7 +375,7 @@ Examples:
         '-i',
         action='store_true',
         default=True,
-        help='Enable interactive chatbot (default: enabled in full mode)'
+        help='Enable interactive chatbot with conversation memory (default: enabled in full mode)'
     )
     
     parser.add_argument(
