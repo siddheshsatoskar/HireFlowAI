@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # API Keys
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyAiMFTZ5YNYRax8lia3-NJ0Qv8oG4HqLqc")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Pinecone Configuration (optional)
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
