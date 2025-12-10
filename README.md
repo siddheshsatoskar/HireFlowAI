@@ -105,7 +105,7 @@ PINECONE_API_KEY=your_pinecone_api_key_here  # if using Pinecone
 Run the full pipeline with all 8 steps (including chatbot):
 
 ```bash
-python src/simple_pipeline_local.py
+python3 main.py
 ```
 
 This will:
@@ -117,16 +117,20 @@ This will:
 6. Generate evaluation
 7. **Launch interactive chatbot** for Q&A
 
-### Running the Standalone Chatbot
+### Running Different Modes
 
 ```bash
-python src/chatbot.py
-```
+# Search only mode
+python3 main.py --mode search
 
-Or try the demo:
+# Chatbot only mode
+python3 main.py --mode chatbot
 
-```bash
-python demo_chatbot.py --mode interactive
+# With custom job description
+python3 main.py --job-description "Looking for Python developer with 3+ years experience"
+
+# With job description from file
+python3 main.py --job-file job_description.txt
 ```
 
 ### Running the Web Application
@@ -164,13 +168,18 @@ week11day2-HireFlow/
 ├── app.py                      # Main Streamlit application
 ├── data/
 │   └── Senior_Accountant_Position.pdf
+├── main.py                    # CLI entry point
 ├── src/
 │   ├── __init__.py
-│   ├── embeddings.py          # Embedding generation using Gemini
-│   ├── vector_store.py        # FAISS/Pinecone integration
-│   ├── candidate_matcher.py   # Semantic matching logic
-│   ├── evaluator.py           # AI-powered candidate evaluation
-│   └── utils.py               # Helper functions
+│   └── services/              # Service classes
+│       ├── __init__.py
+│       ├── environment_setup.py
+│       ├── document_ingestion.py
+│       ├── vector_store.py
+│       ├── retrieval.py
+│       ├── reranking.py
+│       ├── evaluation.py
+│       └── chatbot.py
 ├── config/
 │   └── settings.py            # Configuration management
 ├── tests/
