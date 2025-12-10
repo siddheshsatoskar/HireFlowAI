@@ -1,7 +1,9 @@
 """
-HireFlow Simple Pipeline - Local Embeddings Version
+HireFlow Simple Pipeline - Local Embeddings Version (Refactored with Classes)
 Uses HuggingFace embeddings (runs locally, no API quota needed)
 Demonstrates: Reading resumes → Ingestion → Vector Store → Retrieval → Re-ranking
+
+This module now serves as a compatibility layer that wraps the new class-based architecture.
 """
 
 import os
@@ -12,356 +14,152 @@ import sys
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, Document
-from llama_index.core.retrievers import VectorIndexRetriever
+from llama_index.core import VectorStoreIndex, Document
+from llama_index.core.schema import NodeWithScore
 
-# Using HuggingFace embeddings (local, no API needed)
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.llms.google_genai import GoogleGenAI
-from llama_index.core.memory import ChatMemoryBuffer
+# Import the new service classes
+from src.services import (
+    EnvironmentSetup,
+    DocumentIngestionManager,
+    VectorStoreManager,
+    RetrievalManager,
+    ReRankingManager,
+    EvaluationManager,
+    ChatbotManager
+)
 
 from config.settings import DATA_DIR, TOP_K_CANDIDATES, GEMINI_API_KEY
 
 
+# Backward compatibility functions that wrap the new classes
 def setup_local_environment():
-    """Step 1: Setup Local Embedding Model"""
-    print("=" * 60)
-    print("STEP 1: Setting up Local Embedding Model")
-    print("=" * 60)
+    """
+    Step 1: Setup Local Embedding Model
     
-    # Use HuggingFace embeddings directly
-    model_name = "sentence-transformers/all-MiniLM-L6-v2"
-    embed_model = HuggingFaceEmbedding(model_name=model_name)
-    
-    # Set global settings
-    Settings.embed_model = embed_model
-    Settings.chunk_size = 512
-    Settings.chunk_overlap = 50
-    
-    print(f"✓ Local embedding model loaded: {model_name}")
-    print("✓ Chunk size: 512, Overlap: 50")
-    print()
-    
-    return embed_model
+    Returns:
+        HuggingFaceEmbedding: Configured embedding model
+    """
+    env_setup = EnvironmentSetup()
+    return env_setup.setup()
 
 
 def read_single_resume(file_path: str) -> Document:
-    """Step 2: Reading from 1 resume"""
-    print("=" * 60)
-    print("STEP 2: Reading a Single Resume")
-    print("=" * 60)
+    """
+    Step 2: Reading from 1 resume
     
-    print(f"Reading resume: {file_path}")
-    
-    # Read PDF using LlamaIndex SimpleDirectoryReader
-    reader = SimpleDirectoryReader(input_files=[file_path])
-    documents = reader.load_data()
-    
-    if documents:
-        doc = documents[0]
-        print(f"✓ Successfully read resume")
-        print(f"  - File: {Path(file_path).name}")
-        print(f"  - Content length: {len(doc.text)} characters")
-        print(f"  - Preview:")
-        print(f"    {doc.text[:300]}...")
-        print()
-        return doc
-    else:
-        raise ValueError("No content could be extracted from the resume")
+    Args:
+        file_path: Path to the resume file
+        
+    Returns:
+        Document: Parsed document object
+    """
+    doc_manager = DocumentIngestionManager()
+    return doc_manager.read_single_resume(file_path)
 
 
 def ingest_multiple_resumes(resume_dir: str) -> List[Document]:
-    """Step 3: Ingesting multiple resumes"""
-    print("=" * 60)
-    print("STEP 3: Ingesting Multiple Resumes")
-    print("=" * 60)
+    """
+    Step 3: Ingesting multiple resumes
     
-    resume_path = Path(resume_dir)
-    
-    if not resume_path.exists():
-        print(f"⚠ Directory not found: {resume_dir}")
-        return []
-    
-    # Read all PDF files from directory
-    reader = SimpleDirectoryReader(
-        input_dir=str(resume_path),
-        required_exts=[".pdf"],
-        recursive=True
-    )
-    documents = reader.load_data()
-    
-    print(f"✓ Successfully ingested {len(documents)} document(s)")
-    for i, doc in enumerate(documents, 1):
-        file_name = doc.metadata.get('file_name', 'Unknown')
-        char_count = len(doc.text)
-        print(f"  {i}. {file_name} - {char_count} chars")
-    print()
-    
-    return documents
+    Args:
+        resume_dir: Directory containing resumes
+        
+    Returns:
+        List[Document]: List of ingested documents
+    """
+    doc_manager = DocumentIngestionManager()
+    return doc_manager.ingest_multiple_resumes(resume_dir)
 
 
 def create_vector_store(documents: List[Document]) -> VectorStoreIndex:
-    """Step 4: Creating Vector Store with FAISS"""
-    print("=" * 60)
-    print("STEP 4: Creating Vector Store")
-    print("=" * 60)
+    """
+    Step 4: Creating Vector Store with FAISS
     
-    print("Creating vector embeddings and building FAISS index...")
-    print("(This may take a minute for local embeddings)")
-    
-    # Create vector store index (uses FAISS by default)
-    index = VectorStoreIndex.from_documents(
-        documents,
-        show_progress=True
-    )
-    
-    print("✓ Vector store index created successfully")
-    print(f"  - Number of documents indexed: {len(documents)}")
-    print(f"  - Vector database: FAISS (in-memory)")
-    print()
-    
-    # Optional: Save index to disk
-    index_path = Path(__file__).parent.parent / "vector_store"
-    index_path.mkdir(exist_ok=True)
-    index.storage_context.persist(persist_dir=str(index_path))
-    print(f"✓ Index saved to: {index_path}")
-    print()
-    
-    return index
+    Args:
+        documents: List of documents to index
+        
+    Returns:
+        VectorStoreIndex: Created vector store index
+    """
+    vector_store_manager = VectorStoreManager()
+    return vector_store_manager.create_and_save_index(documents)
 
 
 def retrieve_candidates(index: VectorStoreIndex, job_description: str, top_k: int = 5):
-    """Step 5: Retrieval - Find top candidates"""
-    print("=" * 60)
-    print("STEP 5: Retrieval - Finding Top Candidates")
-    print("=" * 60)
+    """
+    Step 5: Retrieval - Find top candidates
     
-    print(f"Job Description Query:")
-    print(f"  {job_description}...")
-    print()
-    
-    # Create retriever
-    retriever = VectorIndexRetriever(
-        index=index,
-        similarity_top_k=top_k
-    )
-    
-    # Retrieve relevant nodes
-    retrieved_nodes = retriever.retrieve(job_description)
-    
-    print(f"✓ Retrieved {len(retrieved_nodes)} candidate node(s)")
-    print()
-    
-    # Display results
-    for i, node in enumerate(retrieved_nodes, 1):
-        print(f"Result {i}:")
-        print(f"  - Similarity Score: {node.score:.4f}")
-        print(f"  - Source: {node.node.metadata.get('file_name', 'Unknown')}")
-        print(f"  - Content Preview:")
-        print(f"    {node.text[:150]}...")
-        print()
-    
-    return retrieved_nodes
+    Args:
+        index: Vector store index
+        job_description: Job description query
+        top_k: Number of candidates to retrieve
+        
+    Returns:
+        List[NodeWithScore]: Retrieved candidate nodes
+    """
+    retrieval_manager = RetrievalManager(index, similarity_top_k=top_k)
+    return retrieval_manager.retrieve(job_description)
 
 
 def simple_rerank(retrieved_nodes, job_description: str, top_n: int = 3):
-    """Step 6: Simple Re-ranking based on keyword matching"""
-    print("=" * 60)
-    print("STEP 6: Re-ranking Candidates")
-    print("=" * 60)
+    """
+    Step 6: Simple Re-ranking based on keyword matching
     
-    print(f"Re-ranking {len(retrieved_nodes)} candidates...")
-    print(f"Using similarity scores from semantic search")
-    print()
-    
-    # Already ranked by similarity, just take top N
-    top_candidates = retrieved_nodes[:top_n]
-    
-    print(f"✓ Top {len(top_candidates)} candidates after re-ranking:")
-    print()
-    
-    for i, node in enumerate(top_candidates, 1):
-        print(f"Rank #{i}:")
-        print(f"  - Score: {node.score:.4f}")
-        print(f"  - Source: {node.node.metadata.get('file_name', 'Unknown')}")
-        print(f"  - Match Reason: High semantic similarity to job requirements")
-        print()
-    
-    return top_candidates
+    Args:
+        retrieved_nodes: List of retrieved nodes
+        job_description: Job description for context
+        top_n: Number of top candidates to return
+        
+    Returns:
+        List[NodeWithScore]: Top N candidates
+    """
+    reranking_manager = ReRankingManager()
+    return reranking_manager.simple_rerank(retrieved_nodes, job_description, top_n)
 
 
 def generate_summary_report(top_candidates, job_description: str):
-    """Generate a summary report"""
-    print("=" * 60)
-    print("FINAL SUMMARY REPORT")
-    print("=" * 60)
-    print()
+    """
+    Generate a summary report
     
-    print(f"Job Description: {job_description}...")
-    print()
-    print(f"Total Candidates Evaluated: {len(top_candidates)}")
-    print()
-    print("Top Recommendations:")
-    print()
-    
-    for i, node in enumerate(top_candidates, 1):
-        score_pct = node.score * 100
-        recommendation = "HIGHLY RECOMMENDED" if score_pct > 80 else "RECOMMENDED" if score_pct > 60 else "CONSIDER"
+    Args:
+        top_candidates: List of top candidates
+        job_description: Job description for context
         
-        print(f"{i}. Candidate from: {node.node.metadata.get('file_name', 'Unknown')}")
-        print(f"   Match Score: {score_pct:.1f}%")
-        print(f"   Recommendation: {recommendation}")
-        print(f"   Key Snippet: {node.text}...")
-        print()
-    
-    return True
+    Returns:
+        bool: True if successful
+    """
+    evaluation_manager = EvaluationManager()
+    return evaluation_manager.generate_summary_report(top_candidates, job_description)
 
 
 def generate_candidate_evaluation(index: VectorStoreIndex, job_description: str):
-    """Generate detailed candidate evaluation using Gemini LLM"""
-    print("=" * 60)
-    print("STEP 7: GENERATING DETAILED CANDIDATE EVALUATION")
-    print("=" * 60)
-
-    memory = ChatMemoryBuffer(token_limit=1500)
-    
-    # Initialize Gemini LLM
-    llm = GoogleGenAI(
-        model="gemini-2.5-flash",
-        api_key=GEMINI_API_KEY
-    )
-    
-    # Create query engine with Gemini LLM
-    query_engine = index.as_query_engine(
-        llm=llm,
-        similarity_top_k=3,
-        response_mode="compact"
-    )
-    
-    evaluation_prompt = f"""
-    Based on the job description below, evaluate the top candidate from the retrieved resume data:
-    
-    Job Description:
-    {job_description}
-    
-    Provide a structured evaluation with:
-    1. Overall Match Score (0-100%)
-    2. Key Strengths (3-5 points)
-    3. Potential Gaps (2-3 points)
-    4. Final Recommendation (Highly Recommended / Recommended / Not Recommended)
-    
-    Be specific and cite actual experience/skills from the resume.
     """
+    Generate detailed candidate evaluation using Gemini LLM
     
-    print("Generating AI-powered evaluation report with Gemini...")
-    print()
-    response = query_engine.query(evaluation_prompt)
-    
-    print("=" * 60)
-    print("CANDIDATE EVALUATION REPORT (Powered by Gemini AI)")
-    print("=" * 60)
-    print(response)
-    print()
-    
-    return response
+    Args:
+        index: Vector store index
+        job_description: Job description for evaluation
+        
+    Returns:
+        str: Evaluation report
+    """
+    evaluation_manager = EvaluationManager(gemini_api_key=GEMINI_API_KEY)
+    return evaluation_manager.generate_detailed_evaluation(index, job_description)
 
 
 def interactive_chatbot(index: VectorStoreIndex, job_description: str = None):
-    """Step 8: Interactive Chatbot for Candidate Questions"""
-    print("=" * 60)
-    print("STEP 8: INTERACTIVE CHATBOT")
-    print("=" * 60)
-    print()
-    print("Welcome to the HireFlow Chatbot! 🤖")
-    print("I'm your AI assistant for candidate search and evaluation.")
-    print()
-    print("💡 I maintain conversation context, so you can ask follow-up questions!")
-    print()
-    print("Example conversation:")
-    print("  You: Who has the most accounting experience?")
-    print("  Bot: [Gives answer about Candidate A]")
-    print("  You: What about their certifications?  ← I remember who 'their' refers to!")
-    print("  Bot: [Details about Candidate A's certifications]")
-    print("  You: Compare them with the second candidate  ← Conversational!")
-    print()
-    print("Type 'exit', 'quit', or 'bye' to end the conversation.")
-    print("=" * 60)
-    print()
+    """
+    Step 8: Interactive Chatbot for Candidate Questions
     
-    # Initialize Gemini LLM
-    llm = GoogleGenAI(
-        model="gemini-2.5-flash",
-        api_key=GEMINI_API_KEY
-    )
-
-    # Create chat memory buffer
-    memory = ChatMemoryBuffer.from_defaults(token_limit=3000)
-    
-    # Create chat engine with Gemini LLM (instead of query engine)
-    chat_engine = index.as_chat_engine(
-        llm=llm,
-        memory=memory,
-        similarity_top_k=5,
-        chat_mode="context",  # Uses retrieved context for responses
-        system_prompt="""You are a helpful HR assistant for HireFlow, an intelligent candidate search system.
-You have access to a database of candidate resumes. Your role is to:
-- Answer questions about candidates' skills, experience, and qualifications
-- Compare candidates based on specific criteria
-- Provide recommendations for job roles
-- Remember the conversation context and refer back to previous answers
-
-Be concise, professional, and cite specific details from the resumes when possible."""
-    )
-    
-    # Add job description context if provided
-    if job_description:
-        print("📋 Setting up context with job description...")
-        initial_message = f"""I'm looking to fill a position with the following requirements:
-
-{job_description}
-
-Please keep this job description in mind when I ask about candidates."""
+    Args:
+        index: Vector store index
+        job_description: Optional job description for context
         
-        # Send initial context message (won't be displayed)
-        chat_engine.chat(initial_message)
-        print("✅ Context set! You can now ask questions.\n")
-    
-    # Interactive chat loop
-    while True:
-        try:
-            # Get user input
-            user_question = input("You: ").strip()
-            
-            # Check for exit commands
-            if user_question.lower() in ['exit', 'quit', 'bye', 'q']:
-                print()
-                print("Chatbot: Thank you for using HireFlow! Goodbye! 👋")
-                print()
-                break
-            
-            # Skip empty input
-            if not user_question:
-                continue
-            
-            print()
-            print("Chatbot: ", end="", flush=True)
-            
-            # Chat with the engine (maintains conversation history)
-            response = chat_engine.chat(user_question)
-            print(response)
-            print()
-            
-        except KeyboardInterrupt:
-            print("\n")
-            print("Chatbot: Chat interrupted. Goodbye! 👋")
-            print()
-            break
-        except Exception as e:
-            print(f"\nChatbot: Sorry, I encountered an error: {e}")
-            print("Please try rephrasing your question.")
-            print()
-    
-    return True
+    Returns:
+        bool: True if successful
+    """
+    chatbot_manager = ChatbotManager(index, gemini_api_key=GEMINI_API_KEY)
+    return chatbot_manager.start_interactive_session(job_description)
 
 
 def main():
@@ -370,7 +168,7 @@ def main():
     print("*" * 60)
     print("*" + " " * 58 + "*")
     print("*" + "  HIREFLOW - INTELLIGENT CANDIDATE SEARCH".center(58) + "*")
-    print("*" + "  (Local Embeddings Version)".center(58) + "*")
+    print("*" + "  (Local Embeddings Version - Class-Based)".center(58) + "*")
     print("*" + " " * 58 + "*")
     print("*" * 60)
     print("\n")
@@ -380,9 +178,8 @@ def main():
         embed_model = setup_local_environment()
         
         # Step 2: Read single resume
-        #sample_resume_path = DATA_DIR / "Senior_Accountant_Position.pdf"
-        
-        #single_doc = read_single_resume(str(sample_resume_path))
+        # sample_resume_path = DATA_DIR / "Senior_Accountant_Position.pdf"
+        # single_doc = read_single_resume(str(sample_resume_path))
         
         # Step 3: Ingest resumes
         documents = ingest_multiple_resumes(str(DATA_DIR))
@@ -418,25 +215,6 @@ def main():
         # Step 8: Interactive Chatbot
         interactive_chatbot(index, job_description)
         
-        """ print("=" * 60)
-        print("✓ PIPELINE COMPLETE!")
-        print("=" * 60)
-        print()
-        print("What Happened:")
-        print("  1. ✓ Loaded embedding model")
-        print(f"  2. ✓ Read and parsed {len(documents)} resume(s)")
-        print(f"  3. ✓ Created vector embeddings for semantic search")
-        print(f"  4. ✓ Built FAISS vector database")
-        print(f"  5. ✓ Retrieved top {len(retrieved_nodes)} semantically similar candidates")
-        print(f"  6. ✓ Re-ranked and selected top {len(top_candidates)} candidates")
-        print(f"  7. ✓ Generated AI-powered evaluation for top candidates")
-        print(f"  8. ✓ Interactive chatbot session completed")
-        print()
-        print("Next Steps:")
-        print("  - Customize the job description")
-        print("  - Integrate with Streamlit UI for interactive experience")
-        print() """
-        
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
@@ -445,4 +223,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

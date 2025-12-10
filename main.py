@@ -19,17 +19,17 @@ from pathlib import Path
 # Add src directory to path
 sys.path.append(str(Path(__file__).parent))
 
-from src.simple_pipeline_local import (
-    setup_local_environment,
-    ingest_multiple_resumes,
-    create_vector_store,
-    retrieve_candidates,
-    simple_rerank,
-    generate_summary_report,
-    generate_candidate_evaluation,
-    interactive_chatbot
+# Import the new service classes
+from src.services import (
+    EnvironmentSetup,
+    DocumentIngestionManager,
+    VectorStoreManager,
+    RetrievalManager,
+    ReRankingManager,
+    EvaluationManager,
+    ChatbotManager
 )
-from config.settings import DATA_DIR, TOP_K_CANDIDATES
+from config.settings import DATA_DIR, TOP_K_CANDIDATES, GEMINI_API_KEY
 
 
 def print_banner():
@@ -126,12 +126,14 @@ def run_full_pipeline(args):
     try:
         # Step 1: Setup environment
         print("🔧 Setting up environment...")
-        embed_model = setup_local_environment()
+        env_setup = EnvironmentSetup()
+        embed_model = env_setup.setup()
         
         # Step 2: Ingest resumes
         resume_dir = args.resume_dir if args.resume_dir else str(DATA_DIR)
         print(f"📁 Ingesting resumes from: {resume_dir}")
-        documents = ingest_multiple_resumes(resume_dir)
+        doc_manager = DocumentIngestionManager()
+        documents = doc_manager.ingest_multiple_resumes(resume_dir)
         
         if not documents:
             print("❌ No documents found. Please check the resume directory.")
@@ -139,7 +141,8 @@ def run_full_pipeline(args):
         
         # Step 3: Create vector store
         print("🔍 Creating vector store...")
-        index = create_vector_store(documents)
+        vector_store_manager = VectorStoreManager()
+        index = vector_store_manager.create_and_save_index(documents)
         
         # Step 4: Get job description
         if args.job_description:
@@ -157,24 +160,29 @@ def run_full_pipeline(args):
         
         # Step 5: Retrieve candidates
         top_k = args.top_k if args.top_k else TOP_K_CANDIDATES
-        retrieved_nodes = retrieve_candidates(index, job_description, top_k=top_k)
+        retrieval_manager = RetrievalManager(index, similarity_top_k=top_k)
+        retrieved_nodes = retrieval_manager.retrieve(job_description)
         
         # Step 6: Re-rank candidates
         top_n = args.top_n if args.top_n else 3
-        top_candidates = simple_rerank(retrieved_nodes, job_description, top_n=top_n)
+        reranking_manager = ReRankingManager()
+        top_candidates = reranking_manager.simple_rerank(retrieved_nodes, job_description, top_n=top_n)
         
         # Step 7: Generate summary report
         if not args.skip_report:
-            generate_summary_report(top_candidates, job_description)
+            evaluation_manager = EvaluationManager(gemini_api_key=GEMINI_API_KEY)
+            evaluation_manager.generate_summary_report(top_candidates, job_description)
         
         # Step 8: Generate detailed evaluation
         if args.detailed_evaluation:
-            generate_candidate_evaluation(index, job_description)
+            evaluation_manager = EvaluationManager(gemini_api_key=GEMINI_API_KEY)
+            evaluation_manager.generate_detailed_evaluation(index, job_description)
         
         # Step 9: Interactive chatbot (uses as_chat_engine with conversation memory)
         # Maintains context across questions, understands follow-ups and pronouns
         if args.interactive:
-            interactive_chatbot(index, job_description)
+            chatbot_manager = ChatbotManager(index, gemini_api_key=GEMINI_API_KEY)
+            chatbot_manager.start_interactive_session(job_description)
         
         print("=" * 60)
         print("✅ PIPELINE COMPLETE!")
@@ -201,20 +209,23 @@ def run_chatbot_only(args):
     try:
         # Setup environment
         print("🔧 Setting up environment...")
-        embed_model = setup_local_environment()
+        env_setup = EnvironmentSetup()
+        embed_model = env_setup.setup()
         
         # Check if we should load existing index or create new one
         resume_dir = args.resume_dir if args.resume_dir else str(DATA_DIR)
         
         print(f"📁 Loading resumes from: {resume_dir}")
-        documents = ingest_multiple_resumes(resume_dir)
+        doc_manager = DocumentIngestionManager()
+        documents = doc_manager.ingest_multiple_resumes(resume_dir)
         
         if not documents:
             print("❌ No documents found. Please check the resume directory.")
             return
         
         print("🔍 Creating vector store...")
-        index = create_vector_store(documents)
+        vector_store_manager = VectorStoreManager()
+        index = vector_store_manager.create_and_save_index(documents)
         
         # Get job description if provided (optional for chatbot mode)
         job_description = None
@@ -228,7 +239,8 @@ def run_chatbot_only(args):
         
         # Start chatbot (uses as_chat_engine for conversational AI)
         # Remembers conversation history and handles follow-up questions naturally
-        interactive_chatbot(index, job_description)
+        chatbot_manager = ChatbotManager(index, gemini_api_key=GEMINI_API_KEY)
+        chatbot_manager.start_interactive_session(job_description)
         
     except Exception as e:
         print(f"\n❌ Error: {e}")
@@ -245,12 +257,14 @@ def run_search_only(args):
     try:
         # Setup environment
         print("🔧 Setting up environment...")
-        embed_model = setup_local_environment()
+        env_setup = EnvironmentSetup()
+        embed_model = env_setup.setup()
         
         # Ingest resumes
         resume_dir = args.resume_dir if args.resume_dir else str(DATA_DIR)
         print(f"📁 Ingesting resumes from: {resume_dir}")
-        documents = ingest_multiple_resumes(resume_dir)
+        doc_manager = DocumentIngestionManager()
+        documents = doc_manager.ingest_multiple_resumes(resume_dir)
         
         if not documents:
             print("❌ No documents found. Please check the resume directory.")
@@ -258,7 +272,8 @@ def run_search_only(args):
         
         # Create vector store
         print("🔍 Creating vector store...")
-        index = create_vector_store(documents)
+        vector_store_manager = VectorStoreManager()
+        index = vector_store_manager.create_and_save_index(documents)
         
         # Get job description (required for search mode)
         if args.job_description:
@@ -272,13 +287,16 @@ def run_search_only(args):
         
         # Retrieve and rank
         top_k = args.top_k if args.top_k else TOP_K_CANDIDATES
-        retrieved_nodes = retrieve_candidates(index, job_description, top_k=top_k)
+        retrieval_manager = RetrievalManager(index, similarity_top_k=top_k)
+        retrieved_nodes = retrieval_manager.retrieve(job_description)
         
         top_n = args.top_n if args.top_n else 3
-        top_candidates = simple_rerank(retrieved_nodes, job_description, top_n=top_n)
+        reranking_manager = ReRankingManager()
+        top_candidates = reranking_manager.simple_rerank(retrieved_nodes, job_description, top_n=top_n)
         
         # Generate report
-        generate_summary_report(top_candidates, job_description)
+        evaluation_manager = EvaluationManager(gemini_api_key=GEMINI_API_KEY)
+        evaluation_manager.generate_summary_report(top_candidates, job_description)
         
         print("✅ Search complete!")
         
